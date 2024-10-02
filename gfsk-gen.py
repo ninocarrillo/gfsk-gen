@@ -25,36 +25,36 @@ def InitGaussFilter(this):
 	
 	this['Taps'] = np.convolve(this['Taps'], np.ones(this['samples per symbol']), 'same')
 	this['Taps'] = this['Taps'] / max(this['Taps'])
-	this['segment count'] = np.power(2,filter['symbol span'])
+	this['segment count'] = np.power(np.power(2,this['bits per symbol']),this['symbol span'])
 	return this
 	
 def GenerateSegment(this, data):
 	data = int(data)
-	data_stream = np.zeros((this['symbol span']) * this['samples per symbol'])
+	data_stream = np.zeros((this['symbol span']) * this['samples per symbol'] * this['bits per symbol'])
 	stream_index = 0
+	# pick the symbol map
+	symbol_map = [-1,1]
+	if this['bits per symbol'] == 1:
+		symbol_map = [-1,1]
+	elif this['bits per symbol'] == 2:
+		symbol_map = [1,3,-1,-3]
 	# decompose the input data into binary symbols in a list
-	# Create a tap for the MSB of the symbol span
-	data_tap = np.power(2, this['symbol span'] - 1)
+	data_mask = np.power(2,this['bits per symbol']) - 1
 	symbol_stream = []
-	for symbol_index in range(this['symbol span']):
-		if data & data_tap:
-			symbol_stream.append(-1)
-		else:
-			symbol_stream.append(1)
-		data <<= 1
-	#print(symbol_stream)
+	for symbol_index in range(this['symbol span'] * this['bits per symbol']):
+		symbol = (data >> ((this['symbol span'] - 1) * this['bits per symbol'])) & data_mask
+		symbol_stream.append(symbol_map[symbol])
+		data <<= this['bits per symbol']
 	
-	for symbol_index in range(this['symbol span']):
-		#print(symbol_index)
+	for symbol_index in range(this['symbol span'] * this['bits per symbol']):
 		data_stream[stream_index] = symbol_stream[symbol_index]
 		stream_index += this['samples per symbol']
 	response = np.convolve(data_stream, this['Taps'], 'full')
 	first_valid_index = np.floor((len(this['Taps']) - 1) / 2)
-	first_valid_index += np.floor((this['symbol span'] * this['samples per symbol'] - 1) / 2) - this['samples per symbol']
+	first_valid_index += (np.floor((this['symbol span'] * this['samples per symbol'] - 1) / 2) - this['samples per symbol'])
 	first_valid_index = int(first_valid_index)
 	last_valid_index = first_valid_index + this['samples per symbol']
 	last_valid_index = int(last_valid_index)
-	#print(f"first_valid_index {first_valid_index}, last valid index {last_valid_index}")
 	response = response[first_valid_index:last_valid_index]
 	return(response)
 	
@@ -72,8 +72,8 @@ def GenInt16ArrayC(name, array, column_width):
 	result += ' };'
 	return result
 
-if len(sys.argv) != 6:
-		print("Not enough arguments. Usage: python3 gfsk-gen.py <bandwidth-time> <span> <samples per symbol> <center freq> <deviation>")
+if len(sys.argv) != 7:
+		print("Not enough arguments. Usage: python3 gfsk-gen.py <bandwidth-time> <span> <samples per symbol> <center freq> <deviation> <bits per symbol>")
 		sys.exit(-1)
 
 filter = {}
@@ -82,6 +82,7 @@ filter['symbol span'] = int(sys.argv[2])
 filter['samples per symbol'] = int(sys.argv[3])
 filter['center freq'] = float(sys.argv[4])
 filter['deviation'] = float(sys.argv[5])
+filter['bits per symbol'] = int(sys.argv[6])
 
 filter = InitGaussFilter(filter)
 
@@ -110,8 +111,8 @@ for index in range(len(waveform_table)):
 plt.figure()
 half_point = len(waveform_table) / 2
 half_point = int(np.floor(half_point) - 1)
-ymin = filter['center freq'] - (2 * filter['deviation'])
-ymax = filter['center freq'] + (2 * filter['deviation'])
+ymin = filter['center freq'] - (2 * filter['deviation'] * np.power(2,filter['bits per symbol']))
+ymax = filter['center freq'] + (2 * filter['deviation'] * np.power(2,filter['bits per symbol']))
 plt.plot(waveform_table[0:half_point])
 plt.plot(waveform_table[half_point+1:])
 plt.ylim(ymin, ymax)
